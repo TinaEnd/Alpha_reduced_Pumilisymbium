@@ -1,0 +1,320 @@
+---
+title: "Rmd_Oalg-alpha_distribution_bbmap_20210316"
+author: "Tina Enders"
+date: "16 3 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "D:/Seafile/HomeOffice/Oalg_alpha/community_distribution/20210224_1")
+
+```
+
+## Oalg-alpha community distribution
+
+This is a file to check out the mapping results from Oalg-alpha against all available Oalg genomes.  
+Mapping was done with bbmap.sh trimming quality 30 and ID 0.99.   
+Reference was the gene fasta of Oalg-alpha.  
+
+
+
+```{r workspace, echo=FALSE, warning=FALSE, include=FALSE}
+#setwd("D:/Seafile/HomeOffice/Oalg_alpha/community_distribution/20210224_1")
+
+#install.packages("htmltools", dependencies=TRUE, INSTALL_opts = c('--no-lock'))
+
+library(ggplot2)
+library(plotly)
+library(dplyr)
+library(data.table)
+library(stringr)
+library(tidyr)
+library(htmltools)
+```
+
+## get data
+
+  
+```{r get_data_0, echo=T, warning=FALSE}
+# read file path
+all_paths <-
+  list.files(path = ".",
+             recursive = TRUE,
+             pattern = "covstats.txt",
+             full.names = TRUE)
+
+# read file content
+all_content <-
+  all_paths %>%
+  lapply(read.table,
+         header = FALSE,
+         sep = "\t",
+         encoding = "UTF-8")
+
+# read file name
+all_filenames <- all_paths %>%
+  dirname() %>%
+  as.list()
+
+# combine file content list and file name list
+all_lists <- mapply(c, all_content, all_filenames, SIMPLIFY = FALSE)
+
+# unlist all lists and change column name
+all_result <- rbindlist(all_lists, fill = T)
+
+# change column name
+colnames(all_result) <- c("ID",	"Avg_fold", "Length",	"Ref_GC",	"Covered_percent",	"Covered_bases",	"Plus_reads",	"Minus_reads", "Read_GC",	"Median_fold",	"Std_Dev", "source")
+
+# remove rRNA
+all_result <- all_result %>% filter(!grepl("oa.635", ID))
+all_result <- all_result %>% filter(!grepl("oa.636", ID))
+all_result <- all_result %>% filter(!grepl("oa.639", ID))
+
+# count samples from bays
+sample_count <- all_result %>% count(source, name = "genes")
+sample_count$Bay <- str_sub(sample_count$source, start = 7, end = 10)
+bay_count <- sample_count %>% count(Bay, name = "total")
+
+# filter genes to keep
+all_result <- all_result %>% filter(Length >= 400) # only genes above 400 bp length, does not make a difference
+all_result <- all_result %>% filter(Covered_bases >= 100) # only genes above 1 bases covered
+
+# count genes kept
+all_count <- all_result %>% count(source, name = "positive") # group observations by source
+all_count <- all_count %>% filter(positive >= 3) #  only keep min 3 observations
+
+# count positive samples from bays
+all_count$Bay <- str_sub(all_count$source, start = 7, end = 10)
+bay_count_pos <- all_count %>% count(Bay, name = "positive")
+pos <- merge(bay_count, bay_count_pos, by = "Bay", all = T)
+pos[is.na(pos)] = 0
+pos$negative <- pos$total - pos$positive
+pos$percent <- pos$positive/pos$total*100
+
+
+
+```
+  
+```{r plot, echo=T, warning=FALSE}
+# plot actual numbers
+#p<-ggplot(data=pos, aes(x=bay, y=n.y)) +
+#  geom_bar(stat="identity")
+#plot(p)
+#p + coord_flip()
+
+# plot actual numbers pos vs neg
+
+pos_short <- pos[,c(1,3,4)]
+pos_short <- melt(pos_short, id.vars = "Bay")
+
+pos_short$OalgHRS <- relevel(pos_short$variable, "negative")
+names(pos_short)[3] <- "Specimen"
+p1 <-  ggplot(pos_short, aes(Bay, Specimen, fill = OalgHRS)) +
+  geom_bar(position = "stack", stat = "identity")
+#plot(p1)
+p1 + coord_flip()
+
+# plot percent
+p2<-ggplot(data=pos, aes(x=Bay, y=percent)) +
+  geom_bar(stat="identity")
+#plot(p2)
+p2 + coord_flip()
+
+```
+  
+```{r crazy_figure, echo=T, warning=FALSE}
+# unlist all lists and change column name
+all_result <- rbindlist(all_lists, fill = T)
+
+# change column name
+colnames(all_result) <- c("ID",	"Avg_fold", "Length",	"Ref_GC",	"Covered_percent",	"Covered_bases",	"Plus_reads",	"Minus_reads", "Read_GC",	"Median_fold",	"Std_Dev", "source")
+
+# exclude rRNA
+all_result <- all_result %>% filter(!grepl("oa.635", ID))
+all_result <- all_result %>% filter(!grepl("oa.636", ID))
+all_result <- all_result %>% filter(!grepl("oa.639", ID))
+
+# exclude samples from TANK (hybrid experiment aquarium)
+all_result <- all_result %>% filter(!grepl("TANK", source))
+
+# count samples from bays
+sample_count <- all_result %>% count(source, name = "genes")
+sample_count$Bay <- str_sub(sample_count$source, start = 7, end = 10)
+sample_count$Bay <- gsub('H1ML', 'MAGL', sample_count$Bay)
+sample_count$Bay <- gsub('H2ML', 'MAGL', sample_count$Bay)
+sample_count$Bay <- gsub('BEDO', 'MAGL', sample_count$Bay)
+sample_count$Bay <- gsub('SONS', 'MAGL', sample_count$Bay)
+sample_count$Bay <- gsub('MAGL', 'MALL', sample_count$Bay)
+
+
+bay_count <- sample_count %>% count(Bay, name = "total")
+
+# filter genes to keep
+all_result <- all_result %>% filter(Length >= 400) # only genes above 400 bp length, does not make a difference
+all_result <- all_result %>% filter(Covered_bases >= 100) # only genes above 1 bases covered
+
+# count genes kept
+all_count <- all_result %>% count(source, name = "positive") # group observations by source
+all_count10 <- all_count %>% filter(positive >= 10) #  only keep min 3 observations
+all_count5 <- all_count %>% filter(positive >= 5) #  only keep min 3 observations
+all_count4 <- all_count %>% filter(positive >= 4) #  only keep min 3 observations
+all_count3 <- all_count %>% filter(positive >= 3) #  only keep min 3 observations
+all_count2 <- all_count %>% filter(positive >= 2) #  only keep min 3 observations
+all_count1 <- all_count %>% filter(positive >= 1) #  only keep min 3 observations
+
+
+# count positive samples from bays
+all_count1$Bay <- str_sub(all_count1$source, start = 7, end = 10)
+all_count2$Bay <- str_sub(all_count2$source, start = 7, end = 10)
+all_count3$Bay <- str_sub(all_count3$source, start = 7, end = 10)
+all_count4$Bay <- str_sub(all_count4$source, start = 7, end = 10)
+all_count5$Bay <- str_sub(all_count5$source, start = 7, end = 10)
+all_count10$Bay <- str_sub(all_count10$source, start = 7, end = 10)
+
+all_count1$Bay <- gsub('MAGL', 'MALL', all_count1$Bay)
+all_count2$Bay <- gsub('MAGL', 'MALL', all_count2$Bay)
+all_count3$Bay <- gsub('MAGL', 'MALL', all_count3$Bay)
+all_count4$Bay <- gsub('MAGL', 'MALL', all_count4$Bay)
+all_count5$Bay <- gsub('MAGL', 'MALL', all_count5$Bay)
+all_count10$Bay <- gsub('MAGL', 'MALL', all_count10$Bay)
+
+bay_count_pos1 <- all_count1 %>% count(Bay, name = "positive1")
+bay_count_pos2 <- all_count2 %>% count(Bay, name = "positive2")
+bay_count_pos3 <- all_count3 %>% count(Bay, name = "positive3")
+bay_count_pos4 <- all_count4 %>% count(Bay, name = "positive4")
+bay_count_pos5 <- all_count5 %>% count(Bay, name = "positive5")
+bay_count_pos10 <- all_count10 %>% count(Bay, name = "positive10")
+
+pos <- merge(bay_count, bay_count_pos1, by = "Bay", all = T)
+pos <- merge(pos, bay_count_pos2, by = "Bay", all = T)
+pos <- merge(pos, bay_count_pos3, by = "Bay", all = T)
+pos <- merge(pos, bay_count_pos4, by = "Bay", all = T)
+pos <- merge(pos, bay_count_pos5, by = "Bay", all = T)
+pos <- merge(pos, bay_count_pos10, by = "Bay", all = T)
+
+pos[is.na(pos)] = 0
+
+pos$negative1 <- pos$total - pos$positive1
+pos$negative2 <- pos$total - pos$positive2
+pos$negative3 <- pos$total - pos$positive3
+pos$negative4 <- pos$total - pos$positive4
+pos$negative5 <- pos$total - pos$positive5
+pos$negative10 <- pos$total - pos$positive10
+
+pos$percent1 <- pos$positive1/pos$total*100
+pos$percent2 <- pos$positive2/pos$total*100
+pos$percent3 <- pos$positive3/pos$total*100
+pos$percent4 <- pos$positive4/pos$total*100
+pos$percent5 <- pos$positive5/pos$total*100
+pos$percent10 <- pos$positive10/pos$total*100
+
+
+# graph
+pos_short <- pos[,c(1,3,4,5,6,7,8,9,10,11,12,13,14)]
+pos_short <- melt(pos_short, id.vars = "Bay")
+
+names(pos_short)[2] <- "OalgHRS"
+names(pos_short)[3] <- "Specimen"
+pos_short$Hits <- ifelse(grepl("10", pos_short$OalgHRS), "10", ifelse(grepl("2", pos_short$OalgHRS), "2", ifelse(grepl("3", pos_short$OalgHRS), "3", ifelse(grepl("4", pos_short$OalgHRS), "4", ifelse(grepl("5", pos_short$OalgHRS), "5", "1")))))
+pos_short$Hits <- factor(pos_short$Hits, levels=c("1","2","3","4","5","10"))
+pos_short$Bay <- factor(pos_short$Bay, levels=c("CAVL","CLDF","POMT","SANT","SECC","SORG","VITA","ZUCC","PIAN", "MALL"))
+pos_short$Status <- ifelse(grepl("positive", pos_short$OalgHRS), "positive", "negative")
+
+
+p1 <-  ggplot(pos_short, aes(Hits, Specimen, fill = Status)) +
+  geom_bar(position = "stack", stat = "identity")+
+  scale_fill_manual(values = c("positive" = "#FFCC66", "negative" = "#CCCCCC"))+
+  facet_grid(~Bay)+
+  xlab("Minimum # of genes with mapped reads")+
+  ylab("Specimens")
+#plot(p1)
+p1 
+
+# plot percent
+pos_perc <- pos[,c(1,15,16,17,18,19,20)]
+pos_perc <- melt(pos_perc, id.vars = "Bay")
+
+names(pos_perc)[2] <- "OalgHRS"
+names(pos_perc)[3] <- "Percent"
+pos_perc$Hits <- ifelse(grepl("10", pos_perc$OalgHRS), "10", ifelse(grepl("2", pos_perc$OalgHRS), "2", ifelse(grepl("3", pos_perc$OalgHRS), "3", ifelse(grepl("4", pos_perc$OalgHRS), "4", ifelse(grepl("5", pos_perc$OalgHRS), "5", "1")))))
+pos_perc$Hits <- factor(pos_perc$Hits, levels=c("1","2","3","4","5","10"))
+pos_perc$Bay <- factor(pos_perc$Bay, levels=c("CAVL","CLDF","POMT","SANT","SECC","SORG","VITA","ZUCC","PIAN", "MALL"))
+
+p2 <-  ggplot(pos_perc, aes(Hits, Percent)) +
+  geom_bar(position = "stack", stat = "identity")+
+  facet_grid(~Bay)+
+  xlab("Minimum # of genes with mapped reads")+
+  ylab("Specimens infected in %")
+#plot(p1)
+p2
+
+
+#figure for ISSS talk
+pos_perc_ISS <- pos_perc %>% filter(Hits == 3) #  only keep 3 observations
+pos_perc_ISS$not <- 100 - pos_perc_ISS$Percent
+pos_perc_ISS_melt <- melt(pos_perc_ISS, id.vars = "Bay")
+pos_perc_ISS_melt <- pos_perc_ISS_melt %>% filter(!grepl("Hits", variable)) #  remove bullshit
+pos_perc_ISS_melt <- pos_perc_ISS_melt %>% filter(!grepl("OalgHRS", variable)) #  remove bullshit
+pos_perc_ISS_melt$value <- as.numeric(pos_perc_ISS_melt$value)
+pos_perc_ISS_melt$variable <- relevel(pos_perc_ISS_melt$variable, "not")
+
+pISSS <- ggplot(pos_perc_ISS_melt, aes(x=Bay, y=value, fill=variable)) +
+  geom_bar(position = "stack", stat = "identity")+
+  scale_fill_manual(values = c("Percent" = "#FFCC66", "not" = "#CCCCCC"))+
+  theme_classic()
+#plot(p1)
+pISSS
+```
+## Correlation of positive samples to total samples  
+Merle noted that it would be smart to plot positive samples to total samples to see whether there is a correlation
+
+```{r positive_per_sample_amount, echo=T, warning=FALSE}
+pos_corr <- pos[,c(2,3,4,5,6,7,8)]
+pos_corr <- melt(pos_corr, id.vars = "total")
+
+p3 <- ggplot(pos_corr, aes(x=total, y=value, colour=variable)) +
+  geom_point() #+ geom_smooth(method = "lm")
+p3
+ggplotly(p3)
+
+
+# correlation total samples vs positive samples based on # of Hits
+cor(pos$total, pos$positive1)
+cor(pos$total, pos$positive2)
+cor(pos$total, pos$positive3)
+cor(pos$total, pos$positive4)
+cor(pos$total, pos$positive5)
+cor(pos$total, pos$positive10)
+
+```
+```{r conserved_genes}
+
+
+# check for conserved genes
+ID_count <- all_result %>% count(ID, name = "instances")
+
+# graph
+
+p4 <- ggplot(ID_count, aes(x=ID, y=instances,)) +
+  geom_point()
+p4
+
+
+p5 <- ggplot(ID_count, aes(x=instances)) + geom_histogram()
+p5
+
+# which are the genes that are unregularly often hit? 
+# Its oa.522 which is 6003 bp long and thus might have a higher change of being sequences or hit?
+# Its oa.479 which is 5148 bp long so same issues as above
+# These two are the longest genes, but similarly longer are not overly often hit. 
+# Generally I would say that it looks statistically sound. 
+
+```
+
+```{r export_data}
+#write.csv(sample_count, file = "D:/Seafile/HomeOffice/Oalg_alpha/community_distribution/sample_count_Oalg")
+```
+
+
+
