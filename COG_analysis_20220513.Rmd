@@ -1,0 +1,174 @@
+---
+title: "COG_analysis_2021"
+author: "Tina Enders"
+date: "6 12 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+### COG analysis of Pumilisymbium abstrusum
+
+This document produces and NMDS landscaping of Pumilisymbium abstrusum among family representatives of Alphaproteobacteria.
+
+## Data
+- Pumilisymbium abstrusum metagenome assembled genome
+- 10 phylogenomic relatives of P. abstrusum from GTDBtk
+- 149 representatives of alphaproteobacterial families provided by Nikolaus Leisch
+
+## Aims
+- COG bar chart of P. abstrusum and its 10 phylogenomic relatives
+- Produce NMDS plot of the samples based on COG frequencies to compare genetic patterns of the samples
+- Produce PCoA plot of the samples based on COG frequencies to determine drivers of the genetic patterns
+
+## Software used
+eggNOG emapper.py emapper-2.1.6  
+Rstudio 1.4.1106  
+R version 4.0.4  
+
+## Create environment
+
+```{r create_env, warning=FALSE, message=FALSE}
+library(reshape2)
+library(ggplot2)
+library(plotly)
+library(vegan)
+library(devtools)
+library(ggfortify)
+library(tidyr)
+
+#install packages
+#install.packages("vegan")
+#install.packages("ggfortify")
+```
+
+## Create metadata table for bins
+
+```{r create_database,  warning=FALSE, message=FALSE}
+setwd("D:/Seafile/HomeOffice/Oalg_alpha/COG_analysis")
+
+#get metadata
+metadata <- read.csv('NCBI_assemblies/list_of_accessions.txt', sep = "\t", header = TRUE)
+
+#get COG tables
+files <- list.files(path="emapper_out", pattern='annotations_COGs')
+
+#loop through datafiles and import data into new R dataframe
+setwd("D:/Seafile/HomeOffice/Oalg_alpha/COG_analysis/emapper_out_20211213")
+
+names<-c('genes','COG')
+MAG_file<-gsub(pattern='.emapper.annotations_COGs','',files)
+
+combined_gene_annotations <- data.frame()
+for (i in 1:length(files)){
+  #Import dataframe
+  df<-read.table(files[i], sep = '\t', fill = TRUE)
+  head(df)
+  colnames(df)<-names
+  #manipulate
+  tmp<-df
+  tmp$MAG_emapper_name<-MAG_file[i]
+  combined_gene_annotations<-rbind(combined_gene_annotations,data.frame(tmp))
+}
+
+# get total number of COGs per MAG assigned by eggNOG
+num_cogs <- data.frame(table(combined_gene_annotations$MAG_emapper_name))
+
+combined_gene_annotations$COG<-as.vector((combined_gene_annotations$COG))
+COG.df<-combined_gene_annotations[!is.na(combined_gene_annotations$COG),]
+COG.df<-combined_gene_annotations[!combined_gene_annotations$COG=="",]
+COG.df<-combined_gene_annotations[!combined_gene_annotations$COG=="-",]
+
+#get frequencies of cog counts per MAG
+cog<-data.frame()
+for (i in 1:length(MAG_file)){
+  tmp<-COG.df[COG.df$MAG_emapper_name==MAG_file[i],]
+  cog.tmp<-data.frame(table(unlist(strsplit(x=tmp$COG,split = character(0)))))
+  cog<-rbind(cog,data.frame(cog.tmp,MAG=MAG_file[i]))
+}
+
+
+```
+
+## NMDS data prep
+
+```{r NMDS data prep,  warning=FALSE, message=FALSE}
+
+cog.wide<-dcast(data = cog, formula = MAG ~ Var1, value.var =  'Freq')
+cog.wide[is.na(cog.wide)]<-0 # fill in NA values with 0s
+head(cog.wide)
+rownames(cog.wide)<-cog.wide$MAG
+cog.wide<-cog.wide[,-1] #prep for nmds analysis
+cog.wide<-sweep(cog.wide, MARGIN = 1, STATS = rowSums(cog.wide),FUN = '/') #get relative abundance
+#cog.wide <- cog.wide[ -c(1,2) ]
+#head(cog.wide)
+nmds<-metaMDS(cog.wide, distance = 'bray',autotransform = T, trymax = 10000)
+pts.nmds<-data.frame(nmds$points)
+pts.nmds$MAG<-rownames(pts.nmds)
+pts.nmds$group<-metadata[match(pts.nmds$MAG, metadata$file), 'group']
+nmds
+
+```
+
+```{R NMDS,  warning=FALSE, message=FALSE}
+#plot
+p_NMDS<-ggplot2::ggplot(pts.nmds, aes(x=MDS1, y=MDS2, label=MAG, fill=group))+ 
+  geom_point(shape=21,size=3)+
+  scale_fill_manual(values = c("#9EC8EA", "#CCCBCB", "#844399"))+
+  theme(panel.background = element_blank(),
+        panel.border = element_rect(fill = NA),
+        legend.key = element_blank())
+
+plot(p_NMDS)
+ggplotly(p_NMDS)
+```
+
+## PCA analysis
+
+```{R PCA,  warning=FALSE, message=FALSE}
+
+cog.wide$group<-metadata[match(rownames(cog.wide), metadata$file), 'group'] 
+
+metadata <- metadata %>% separate(MAG, c("MAG", "species"), sep="s__")
+
+cog.pca <- prcomp(cog.wide[,c(1:23)], center = TRUE, scale. = TRUE)
+
+summary(cog.pca)
+str(cog.pca)
+
+p_PCA<-autoplot(cog.pca, data = cog.wide, colour='group', loadings = TRUE, loadings.label = TRUE,loadings.colour = "grey", loadings.label.colour = 'black')+
+   scale_colour_manual(values = c("#9EC8EA", "#CCCBCB", "#844399"))+
+  theme(panel.background = element_blank(),
+        panel.border = element_rect(fill = NA), 
+        legend.key = element_blank())
+
+plot(p_PCA)
+ggplotly(p_PCA)
+
+
+```
+
+## Barchart of GTDBtk relatives
+```{R barchart}
+
+cog.wide.select<-cog.wide[grep("relatives|target" , cog.wide$group), ]
+cog.wide.select$MAG<-rownames(cog.wide.select)
+cog.wide.select$species<-metadata[match(rownames(cog.wide.select), metadata$file), 'species']
+cog.wide.select$species <- replace_na(cog.wide.select$species,".Pumilisymbium abstrusum")
+
+cog.long.select<-gather(cog.wide.select, COG, relabundance, A:Y)
+
+
+p_bar<-ggplot2::ggplot(cog.long.select, aes(x=COG, y=relabundance, fill=species))+ 
+  geom_col(position = "dodge")+
+  scale_fill_brewer(palette = "RdYlBu")+
+  theme(panel.background = element_blank(),
+        panel.border = element_rect(fill = NA),
+        legend.key = element_blank())+
+  labs(y = "relative abundance (%)", x= "COG category")
+
+plot(p_bar)
+ggplotly(p_bar)
+
+```
