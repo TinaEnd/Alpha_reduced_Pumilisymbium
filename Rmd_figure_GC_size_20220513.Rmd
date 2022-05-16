@@ -1,0 +1,227 @@
+---
+title: "figure_GC_size"
+author: "Tina Enders"
+date: "11 3 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Set working space
+
+```{r workspace, echo=FALSE, warning=FALSE, include=FALSE}
+setwd("D:/Seafile/HomeOffice/Oalg_alpha/figure_GC_size")
+
+#install.packages("tidyverse", dependencies=TRUE)
+#install.packages("dplyr", dependencies=TRUE)
+#install.packages("ggplot2", dependencies=TRUE)
+#install.packages("plotly", dependencies=TRUE)
+#install.packages("rlang", dependencies=TRUE)
+
+library(rlang)
+library(tidyverse)
+library(ggplot2)
+library(plotly)
+
+```
+
+## Get files  
+The NCBI_bacteria_complete_20210311.csv is extracted from NCBI genome browser bacteria complete assemblies.  
+To get the genomes below 1.5 Mbp I sort the table and only keep the ones that are below or equal to 1.5 Mbp in size.   
+  
+Now I need to think about how to colour them according to what I want to be presented.  
+I need:  
+terrestrial (yellow) vs marine (blue)  
+Symbiont vs non symbiont is easy, because I can fill the ones that have a host with symbiont. Caution, some are filled with NA or none, these I changed manually to free-living in the final .csv. Some have a host but it is not listed. These I changed manually to symbiont in the final .csv.    
+  
+How do I get to know what is marine and what is terrestrial?   
+Actually google it and fill in the table!   
+NCBI_bacteria_complete_20210311_for_habitat_edited.csv is the table that has the final information.  
+How do I sort by duplicate species?   
+I always choose only one representative of one species (I did not consider different strains). I always took the smallest representative.  
+
+
+```{r files, echo=FALSE}
+table <- read.csv("NCBI_bacteria_complete_20210311.csv")
+table.sort <- table[order(table$Size.Mb.),]
+table.2Mbp <- table.sort[table.sort$Size.Mb. <= 1.5,]
+
+
+#test for marine and terrestrial
+table.2Mbp$habitat <- ifelse(grepl("Candidatus Vesicomyosocius", table.2Mbp$X.Organism.Name), "marine", "terrestrial")
+
+# test for symbiont and free-living
+table.2Mbp$lifestyle <- ifelse(table.2Mbp$Host == '', "free-living", "symbiont")
+
+# add OalgHRS
+Oalg <- c("OalgHRS",NA,NA,NA,NA,NA,NA,"0.641817","34.7",NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,"marine","symbiont")
+
+
+table.fig <- rbind(table.2Mbp, Oalg)
+table.fig <- data.frame(table.fig)
+table.fig$Size.Mb.<- as.double(table.fig$Size.Mb.)
+table.fig$GC.<- as.double(table.fig$GC.)
+
+#write.csv(table.fig, file = "NCBI_bacteria_complete_20210311_for_habitat.csv")
+
+```
+
+## Conclusion of the day  
+There are smaller marine bacteria than mine  
+These are one from Bradyrhizobium and the sea urgin  
+Then there is this cloud of Mycoplasma from marine Mammals and Birds that forms a cloud of reduced "marine" bacteria, but we know already that Mycobacteria are a reduced clade of bacteria.    
+
+## NCBI Chromosomes  
+Also the NCBI chromosomes instead of complete genomes do not harbor any additional marine sample except for the George et al 2020 samples. And some ground water reduced bacteria.    
+Should I add them? did not.
+
+## Additional samples
+I want to add the george et al samples and the Deianireae from the GTDB taxonomy to be consistent in the plot
+
+## Make graph 2022-03-18 
+```{r, graph thesis}
+
+# test out how to get all round and only the symbionts with an edge around the circle
+
+table.edit <- read.csv("NCBI_bacteria_complete_20210311_for_habitat_edited.csv")
+table.edit$Size.Mb.<- as.double(table.edit$Size.Mb.)
+table.edit$GC.<- as.double(table.edit$GC.)
+table.edit <- table.edit[grep("yes", table.edit$keep),]
+#table.edit$symbiont <- ifelse(grepl("symbiont", table.edit$lifestyle), "yes","no")
+table.edit.r <- table.edit[grepl("yes", table.edit$relative),]
+table.edit.nr <- table.edit[grep("yes", table.edit$relative, invert = TRUE),]
+
+p1 <- ggplot(NULL, aes(x=Size.Mb., y=GC.)) +
+  #geom_point(data = table.edit.nr, aes(x=Size.Mb., y=GC., color=habitat),size=3.5, shape=16)+
+  geom_point(data = table.edit.r,aes(x=Size.Mb., y=GC., color=habitat), size=3.5, shape=17)+
+  scale_color_manual(values = c( "marine" = "#3333FF", "marine_large_animal" = "#9900CC", "freshwater" = "#99CCFF", "terrestrial"= "#FFCC66", "n. d." = "#CCCCCC")) +
+   scale_fill_manual(values = c( "marine" = "#3333FF", "marine_large_animal" = "#9900CC", "freshwater" = "#99CCFF","terrestrial"= "#FFCC66", "n. d." = "#CCCCCC")) +
+  theme_classic() +
+  theme(
+    panel.grid = element_blank(),
+  )+
+  coord_cartesian(xlim = c(0,1.2), ylim = c(10,80))+
+  xlab("Genome Size (Mbp)")+
+  ylab("GC (%)")
+
+plot(p1)
+ggplotly(p1)
+```
+
+## Make graphs before 2022-03-18
+
+```{r graphs, echo=FALSE}
+
+table.edit <- read.csv("NCBI_bacteria_complete_20210311_for_habitat_edited.csv")
+table.edit$Size.Mb.<- as.double(table.edit$Size.Mb.)
+table.edit$GC.<- as.double(table.edit$GC.)
+table.edit <- table.edit[grep("yes", table.edit$keep),]
+
+p1 <- ggplot(table.edit, aes(x=Size.Mb., y=GC., color=habitat, shape=lifestyle)) +
+  geom_point(size=3) +
+  scale_color_manual(values = c("terrestrial"= "#FFCC66", "marine" = "#0000CC", "marine_large_animal" = "#9900CC", "freshwater" = "#99CCFF", "n. d." = "#CCCCCC")) +
+  scale_shape_manual(values = c("symbiont"=16, "free-living"=17)) +
+  theme_light() +
+  theme(
+    panel.grid = element_blank(),
+  )+
+  coord_cartesian(xlim = c(0,1.2), ylim = c(10,80))+
+  xlab("Genome Size (Mbp)")+
+  ylab("GC (%)")
+
+plot(p1)
+ggplotly(p1)
+
+
+```
+```{r, graph2}
+
+# test out how to get all round and only the symbionts with an edge around the circle
+
+table.edit <- read.csv("NCBI_bacteria_complete_20210311_for_habitat_edited.csv")
+table.edit$Size.Mb.<- as.double(table.edit$Size.Mb.)
+table.edit$GC.<- as.double(table.edit$GC.)
+table.edit <- table.edit[grep("yes", table.edit$keep),]
+#table.edit$symbiont <- ifelse(grepl("symbiont", table.edit$lifestyle), "yes","no")
+table.edit.s <- table.edit[grepl("symbiont", table.edit$lifestyle),]
+table.edit.f <- table.edit[grep("symbiont", table.edit$lifestyle, invert = TRUE),]
+
+p1 <- ggplot(NULL, aes(x=Size.Mb., y=GC.)) +
+  geom_point(data = table.edit.f, aes(x=Size.Mb., y=GC., color=habitat),size=3.5, shape=16)+
+  geom_point(data = table.edit.s,aes(x=Size.Mb., y=GC., fill=habitat), size=3.5, shape=21)+
+  scale_color_manual(values = c( "marine" = "#3333FF", "marine_large_animal" = "#9900CC", "freshwater" = "#99CCFF", "terrestrial"= "#FFCC66", "n. d." = "#CCCCCC")) +
+   scale_fill_manual(values = c( "marine" = "#3333FF", "marine_large_animal" = "#9900CC", "freshwater" = "#99CCFF","terrestrial"= "#FFCC66", "n. d." = "#CCCCCC")) +
+  theme_classic() +
+  theme(
+    panel.grid = element_blank(),
+  )+
+  coord_cartesian(xlim = c(0,1.2), ylim = c(10,80))+
+  xlab("Genome Size (Mbp)")+
+  ylab("GC (%)")
+
+plot(p1)
+ggplotly(p1)
+```
+```{r}
+# grey plot for ISSS talk
+
+table.edit <- read.csv("NCBI_bacteria_complete_20210311_for_habitat_edited.csv")
+table.edit$Size.Mb.<- as.double(table.edit$Size.Mb.)
+table.edit$GC.<- as.double(table.edit$GC.)
+table.edit <- table.edit[grep("yes", table.edit$keep),]
+#table.edit$symbiont <- ifelse(grepl("symbiont", table.edit$lifestyle), "yes","no")
+table.edit.s <- table.edit[grepl("symbiont", table.edit$lifestyle),]
+table.edit.f <- table.edit[grep("symbiont", table.edit$lifestyle, invert = TRUE),]
+
+p1 <- ggplot(NULL, aes(x=Size.Mb., y=GC.)) +
+  geom_point(data = table.edit.f, aes(x=Size.Mb., y=GC., color=habitat),size=3.5, shape=16)+
+  geom_point(data = table.edit.s,aes(x=Size.Mb., y=GC., color=habitat), size=3.5, shape=16)+
+  scale_color_manual(values = c("terrestrial"= "#CCCCCC", "marine" = "#CCCCCC", "marine_large_animal" = "#CCCCCC", "freshwater" = "#CCCCCC", "n. d." = "#CCCCCC")) +
+   scale_fill_manual(values = c("terrestrial"= "#CCCCCC", "marine" = "#CCCCCC", "marine_large_animal" = "#CCCCCC", "freshwater" = "#CCCCCC", "n. d." = "#CCCCCC")) +
+  theme_classic() +
+  theme(
+    panel.grid = element_blank(),
+  )+
+  coord_cartesian(xlim = c(0,1.2), ylim = c(10,80))+
+  xlab("Genome Size (Mbp)")+
+  ylab("GC (%)")
+
+plot(p1)
+ggplotly(p1)
+```
+```{r}
+# only Alpha plot for ISSS talk
+table.edit <- read.csv("NCBI_bacteria_complete_20210311_for_habitat_edited.csv")
+table.edit$Size.Mb.<- as.double(table.edit$Size.Mb.)
+table.edit$GC.<- as.double(table.edit$GC.)
+table.edit <- table.edit[grep("yes", table.edit$keep),]
+table.edit <- table.edit[grep("Alphaproteo", table.edit$Organism.Groups),]
+#table.edit$symbiont <- ifelse(grepl("symbiont", table.edit$lifestyle), "yes","no")
+table.edit.s <- table.edit[grepl("symbiont", table.edit$lifestyle),]
+table.edit.f <- table.edit[grep("symbiont", table.edit$lifestyle, invert = TRUE),]
+
+p1 <- ggplot(NULL, aes(x=Size.Mb., y=GC.)) +
+  geom_point(data = table.edit.f, aes(x=Size.Mb., y=GC., color=habitat),size=3.5, shape=16)+
+  geom_point(data = table.edit.s,aes(x=Size.Mb., y=GC., fill=habitat), size=3.5, shape=21)+
+  scale_color_manual(values = c("marine" = "#3333FF", "terrestrial"= "#FFCC66", "marine_large_animal" = "#9900CC", "freshwater" = "#99CCFF", "n. d." = "#CCCCCC")) +
+   scale_fill_manual(values = c( "marine" = "#3333FF", "marine_large_animal" = "#9900CC", "freshwater" = "#99CCFF","terrestrial"= "#FFCC66", "n. d." = "#CCCCCC")) +
+  theme_classic() +
+  theme(
+    panel.grid = element_blank(),
+  )+
+  coord_cartesian(xlim = c(0,1.2), ylim = c(10,80))+
+  xlab("Genome Size (Mbp)")+
+  ylab("GC (%)")
+
+plot(p1)
+ggplotly(p1)
+
+```
+
+
+```{r mischmasch, echo=FALSE}
+names <- as.list(unique(sort(table.2Mbp$X.Organism.Name)))
+
+```
